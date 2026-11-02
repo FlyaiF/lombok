@@ -306,26 +306,51 @@ public class JavacAST extends AST<JavacAST, JavacNode, JCTree> {
 	}
 	
 	private JavacNode buildType(JCClassDecl type) {
-		if (setAndGetAsHandled(type)) return null;
-		List<JavacNode> childNodes = new ArrayList<JavacNode>();
-		
-		for (JCAnnotation annotation : type.mods.annotations) addIfNotNull(childNodes, buildAnnotation(annotation, false));
-		for (JCTree def : type.defs) {
-			/* A def can be:
-			 *   JCClassDecl for inner types
-			 *   JCMethodDecl for constructors and methods
-			 *   JCVariableDecl for fields
-			 *   JCBlock for (static) initializers
-			 */
-			if (def instanceof JCMethodDecl) addIfNotNull(childNodes, buildMethod((JCMethodDecl) def));
-			else if (def instanceof JCClassDecl) addIfNotNull(childNodes, buildType((JCClassDecl) def));
-			else if (def instanceof JCVariableDecl) addIfNotNull(childNodes, buildField((JCVariableDecl) def));
-			else if (def instanceof JCBlock) addIfNotNull(childNodes, buildInitializer((JCBlock) def));
+		try {
+			if (setAndGetAsHandled(type)) return null;
+			List<JavacNode> childNodes = new ArrayList<JavacNode>();
+
+			for (JCAnnotation annotation : type.mods.annotations) addIfNotNull(childNodes, buildAnnotation(annotation, false));
+			for (JCTree def : type.defs) {
+				/* A def can be:
+				 *   JCClassDecl for inner types
+				 *   JCMethodDecl for constructors and methods
+				 *   JCVariableDecl for fields
+				 *   JCBlock for (static) initializers
+				 */
+				if (def instanceof JCMethodDecl) addIfNotNull(childNodes, buildMethod((JCMethodDecl) def));
+				else if (def instanceof JCClassDecl) addIfNotNull(childNodes, buildType((JCClassDecl) def));
+				else if (def instanceof JCVariableDecl) addIfNotNull(childNodes, buildField((JCVariableDecl) def));
+				else if (def instanceof JCBlock) addIfNotNull(childNodes, buildInitializer((JCBlock) def));
+			}
+
+			return putInMap(new JavacNode(this, type, childNodes, Kind.TYPE));
+		} catch (StackOverflowError error) {
+			throw augmentStackOverflow(error, type, "building Lombok's AST");
 		}
-		
-		return putInMap(new JavacNode(this, type, childNodes, Kind.TYPE));
 	}
-	
+
+	// Only wrap once: an inner type must not be replaced by its enclosing type on the way out.
+	StackOverflowError augmentStackOverflow(StackOverflowError error, JCClassDecl type, String phase) {
+		if (error instanceof ASTStackOverflowError) return error;
+		String name = type.sym == null ? type.name.toString() : type.sym.getQualifiedName().toString();
+		if (name.length() == 0) name = "<anonymous>";
+		int fields = 0;
+		for (JCTree def : type.defs) if (def instanceof JCVariableDecl) fields++;
+		return new ASTStackOverflowError("Lombok ran out of stack while " + phase + " for class '" + name + "' in " + getFileName() +
+			" (" + fields + " declared fields). Deep expressions, including generated toString() concatenations, can cause this. " +
+			"Increase the compiler JVM stack (for example, -Xss4m; for in-process Maven compilation, use MAVEN_OPTS).", error);
+	}
+
+	private static final class ASTStackOverflowError extends StackOverflowError {
+		private static final long serialVersionUID = 1L;
+
+		ASTStackOverflowError(String message, StackOverflowError cause) {
+			super(message);
+			initCause(cause);
+		}
+	}
+
 	private JavacNode buildField(JCVariableDecl field) {
 		if (setAndGetAsHandled(field)) return null;
 		List<JavacNode> childNodes = new ArrayList<JavacNode>();

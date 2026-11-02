@@ -91,9 +91,13 @@ public class JavacNode extends lombok.core.LombokNode<JavacAST, JavacNode, JCTre
 			visitor.endVisitCompilationUnit(this, (JCCompilationUnit) get());
 			break;
 		case TYPE:
-			visitor.visitType(this, (JCClassDecl) get());
-			ast.traverseChildren(visitor, this);
-			visitor.endVisitType(this, (JCClassDecl) get());
+			try {
+				visitor.visitType(this, (JCClassDecl) get());
+				ast.traverseChildren(visitor, this);
+				visitor.endVisitType(this, (JCClassDecl) get());
+			} catch (StackOverflowError error) {
+				throw ast.augmentStackOverflow(error, (JCClassDecl) get(), "traversing Lombok's AST");
+			}
 			break;
 		case FIELD:
 			visitor.visitField(this, (JCVariableDecl) get());

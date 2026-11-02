@@ -38,6 +38,7 @@ import javax.annotation.processing.Messager;
 import javax.tools.Diagnostic;
 
 import lombok.core.AlreadyHandledAnnotations;
+import lombok.core.AST.Kind;
 import lombok.core.AnnotationValues.AnnotationValueDecodeFail;
 import lombok.core.HandlerPriority;
 import lombok.core.SpiLoadUtil;
@@ -50,6 +51,7 @@ import com.sun.source.util.Trees;
 import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.tree.JCTree.JCAnnotation;
 import com.sun.tools.javac.tree.JCTree.JCCompilationUnit;
+import com.sun.tools.javac.tree.JCTree.JCClassDecl;
 
 /**
  * This class tracks 'handlers' and knows how to invoke them for any given AST node.
@@ -261,6 +263,12 @@ public class HandlerLibrary {
 			} catch (AnnotationValueDecodeFail fail) {
 				fail.owner.setError(fail.getMessage(), fail.idx);
 			} catch (Throwable t) {
+				if (t instanceof StackOverflowError) {
+					JavacNode type = node;
+					while (type != null && type.getKind() != Kind.TYPE) type = type.up();
+					if (type != null) t = node.getAst().augmentStackOverflow((StackOverflowError) t, (JCClassDecl) type.get(),
+						"running annotation handler " + container.handler.getClass().getName());
+				}
 				String sourceName = "(unknown).java";
 				if (unit != null && unit.sourcefile != null) sourceName = unit.sourcefile.getName();
 				javacError(String.format("Lombok annotation handler %s failed on " + sourceName, container.handler.getClass()), t);
